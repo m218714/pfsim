@@ -1,4 +1,3 @@
-import pandas as pd
 import streamlit as st
 
 from analysis import process  # extracted notebook code
@@ -155,8 +154,8 @@ Prop vs Broker = {summary["total_payouts_pnl"] - summary["portfolio_pnl"]:.2f} (
     """
     st.code(summary_text)
 
-    st.pyplot(account_fig)
+    st.plotly_chart(account_fig, use_container_width=True)
     st.dataframe(events_log)
-    st.pyplot(compared_fig)
+    st.plotly_chart(compared_fig, use_container_width=True)
 
-    st.pyplot(strategies_fig)
+    st.plotly_chart(strategies_fig, use_container_width=True)

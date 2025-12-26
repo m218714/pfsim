@@ -1,9 +1,6 @@
-from datetime import datetime, timedelta
-
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from matplotlib.gridspec import GridSpec
+import plotly.graph_objects as go
 
 
 def load_trades(strategyfile, weight):
@@ -71,29 +68,99 @@ def run_simulation(df, template):
     target_reached = False
     next_allowed_trade = df.iloc[0]["Exit time"]
 
-    def get_account_fig(df):
-        fig, ax = plt.subplots(figsize=(10, 6))
-        ax.plot(df["Exit time"], df["Account Cash"], "b-")
-        ax.plot(df["Exit time"], df["Account Blow"], "r--")
-        ax.plot(df["Exit time"], df["Account Max"], "g--")
-        for date in events_blow:
-            ax.axvline(x=date, color="red", linestyle="-", linewidth=1, alpha=0.7)
-        for date, _ in events_payout:
-            ax.axvline(x=date, color="green", linestyle="-", linewidth=1, alpha=0.7)
-        ax.grid()
-        ax.set_title("Account")
+    def get_account_fig(df, events_blow, events_payout):
+        fig = go.Figure()
+
+        fig.add_trace(
+            go.Scatter(
+                x=df["Exit time"],
+                y=df["Account Cash"],
+                mode="lines",
+                name="Account Cash",
+                line=dict(color="blue"),
+            )
+        )
+
+        fig.add_trace(
+            go.Scatter(
+                x=df["Exit time"],
+                y=df["Account Blow"],
+                mode="lines",
+                name="Trailing Drawdown",
+                line=dict(color="red", dash="dash"),
+            )
+        )
+
+        fig.add_trace(
+            go.Scatter(
+                x=df["Exit time"],
+                y=df["Account Max"],
+                mode="lines",
+                name="Account Max",
+                line=dict(color="green", dash="dash"),
+            )
+        )
+
+        blow_mask = df["Exit time"].isin(events_blow)
+        fig.add_trace(
+            go.Scatter(
+                x=df.loc[blow_mask, "Exit time"],
+                y=df.loc[blow_mask, "Account Cash"],
+                mode="markers",
+                name="Blow up",
+                marker=dict(color="red", size=16),
+            )
+        )
+
+        payout_dates = [d for d, _ in events_payout]
+        payout_mask = df["Exit time"].isin(payout_dates)
+        fig.add_trace(
+            go.Scatter(
+                x=df.loc[payout_mask, "Exit time"],
+                y=df.loc[payout_mask, "Account Cash"],
+                mode="markers",
+                name="Payout",
+                marker=dict(color="green", size=16),
+            )
+        )
+
+        fig.update_layout(
+            title="Account",
+            xaxis_title="Exit time",
+            yaxis_title="Value",
+            height=750,
+        )
 
         return fig
 
     def get_compared_fig(dates, values, df):
-        fig, ax = plt.subplots(figsize=(10, 6))
-        ax.plot(dates, np.cumsum(values), "b+-", label="Prop firm return")
-        ax.plot(
-            df["Exit time"], np.cumsum(df["Profit"]), label="Brokerage account return"
+        fig = go.Figure()
+
+        fig.add_trace(
+            go.Scatter(
+                x=dates,
+                y=np.cumsum(values),
+                mode="lines+markers",
+                name="Prop firm return",
+                line=dict(color="blue"),
+            )
         )
-        ax.legend()
-        ax.grid()
-        ax.set_title("Compared PnL")
+
+        fig.add_trace(
+            go.Scatter(
+                x=df["Exit time"],
+                y=np.cumsum(df["Profit"]),
+                mode="lines",
+                name="Brokerage account return",
+            )
+        )
+
+        fig.update_layout(
+            title="Compared PnL",
+            xaxis_title="Date",
+            yaxis_title="Cumulative PnL",
+            height=750,
+        )
 
         return fig
 
@@ -207,7 +274,7 @@ def run_simulation(df, template):
         dates, values = zip(*sorted(equity_events, key=lambda x: x[0]))
         events_log = sorted(events_log, key=lambda x: x["Date"])
 
-        account_fig = get_account_fig(df)
+        account_fig = get_account_fig(df, events_blow, events_payout)
         compared_fig = get_compared_fig(dates, values, df)
 
         return (
@@ -234,13 +301,30 @@ def run_simulation(df, template):
 
 
 def get_strategies_fig(dfs, merge_df):
-    fig, ax = plt.subplots(figsize=(10, 6))
+    fig = go.Figure()
+
     for i, df in enumerate(dfs):
-        ax.plot(df["Exit time"], np.cumsum(df["Profit"]), label=f"S{i}")
-    ax.plot(merge_df["Exit time"], np.cumsum(merge_df["Profit"]), label=f"Combined")
-    ax.legend()
-    ax.set_title("Strategies PnL")
-    ax.grid()
+        fig.add_trace(
+            go.Scatter(
+                x=df["Exit time"], y=np.cumsum(df["Profit"]), mode="lines", name=f"S{i}"
+            )
+        )
+
+    fig.add_trace(
+        go.Scatter(
+            x=merge_df["Exit time"],
+            y=np.cumsum(merge_df["Profit"]),
+            mode="lines",
+            name="Combined",
+        )
+    )
+
+    fig.update_layout(
+        title="Strategies PnL",
+        xaxis_title="Exit time",
+        yaxis_title="Cumulative PnL",
+        height=750,
+    )
 
     return fig
 
