@@ -64,6 +64,7 @@ def run_simulation(df, template):
     events_blow = []
     events_payout = []
     trades_since_last_payout = []
+    trades_since_inception = []
 
     target_reached = False
     next_allowed_trade = df.iloc[0]["Exit time"]
@@ -164,7 +165,7 @@ def run_simulation(df, template):
 
         return fig
 
-    def can_payout(trades):
+    def can_payout(trades, alltrades):
         try:
             if len(trades) < trading_days_min:
                 return (
@@ -179,9 +180,11 @@ def run_simulation(df, template):
                     False,
                     f"Not enough positive days ({len([x for x in trades if x > trading_day_min_profit])} vs {trading_days_profit})",
                 )
-            total_profit = sum(trades)
+            total_profit = sum(alltrades)
             # total_profit = sum([x for x in trades if x > trading_day_min_profit])
-            max_profit = max(trades)
+            max_profit = max(alltrades)
+            if total_profit == 0:
+                return False, ""
             if max_profit / total_profit >= consistency:
                 if total_profit != 0:
                     return (
@@ -191,8 +194,8 @@ def run_simulation(df, template):
                 else:
                     return (False, f"Consistency not reached")
         except:
-            return False, None
-        return True, None
+            return False, ""
+        return True, ""
 
     def get_max_consecutive_payouts(l):
         max_len = 0
@@ -214,6 +217,7 @@ def run_simulation(df, template):
 
         account_cash += df["Profit"].iloc[i]
         trades_since_last_payout.append(df["Profit"].iloc[i])
+        trades_since_inception.append(df["Profit"].iloc[i])
 
         if account_cash >= account_max:
             account_max = account_cash
@@ -231,10 +235,11 @@ def run_simulation(df, template):
             account_max = account_size
             account_blow = account_size - trailing_dd
             del trades_since_last_payout[:]
+            del trades_since_inception[:]
             target_reached = False
 
         if target_reached and account_cash >= account_size + target + buffer:
-            go_payout, _ = can_payout(trades_since_last_payout)
+            go_payout, _ = can_payout(trades_since_last_payout, trades_since_inception)
             if go_payout:
                 payout = min(maximum_payout, account_cash - (account_size + buffer))
                 if payout >= minimum_payout:
