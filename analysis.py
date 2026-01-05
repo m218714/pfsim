@@ -41,6 +41,163 @@ def merge_trades(dfs):
     return df
 
 
+def can_payout(
+    trades,
+    alltrades,
+    consistency,
+    trading_days_min,
+    trading_day_min_profit,
+    trading_days_profit,
+):
+    try:
+        if len(trades) < trading_days_min:
+            return (
+                False,
+                f"Not enough trading days ({len(trades)} vs {trading_days_min})",
+            )
+        if (
+            len([x for x in trades if x >= trading_day_min_profit])
+            < trading_days_profit
+        ):
+            return (
+                False,
+                f"Not enough positive days ({len([x for x in trades if x > trading_day_min_profit])} vs {trading_days_profit})",
+            )
+        total_profit = sum(alltrades)
+        # total_profit = sum([x for x in trades if x > trading_day_min_profit])
+        max_profit = max(alltrades)
+        if total_profit == 0:
+            return False, ""
+        if max_profit / total_profit >= consistency:
+            if total_profit != 0:
+                return (
+                    False,
+                    f"Consistency not reached ({max_profit / total_profit:.2f} vs {consistency}: max={max_profit}, total={total_profit})",
+                )
+            else:
+                return (False, f"Consistency not reached")
+    except:
+        return False, ""
+    return True, ""
+
+
+def run_simulations(df, template):
+    target = template["target"]
+    buffer = template["buffer"]
+    consistency = template["consistency"]
+    trading_days_profit = template["trading_days_profit"]
+    trading_days_min = template["trading_days_min"]
+    trading_day_min_profit = template["min_profit_day"]
+    trailing_dd = template["trailing_dd"]
+    account_size = template["account_size"]
+    account_cash = template["account_size"]
+    account_max = template["account_size"]
+    account_blow = template["account_size"] - template["trailing_dd"]
+
+    days_to_first_payout_values = []
+    days_to_first_payout_dates = []
+
+    from tqdm import tqdm
+
+    for i in tqdm(range(1, len(df))):
+        # if df.iloc[i]["Exit time"].month == df.iloc[i - 1]["Exit time"].month:
+        #    continue
+
+        target_reached = False
+        trades_since_last_payout = []
+        account_cash = template["account_size"]
+        account_max = template["account_size"]
+        account_blow = template["account_size"] - template["trailing_dd"]
+
+        for j in range(i, len(df)):
+            account_cash += df["Profit"].iloc[j]
+            trades_since_last_payout.append(df["Profit"].iloc[j])
+
+            if account_cash >= account_max:
+                account_max = account_cash
+                account_blow = account_max - trailing_dd
+                if (
+                    account_blow >= account_size + buffer
+                ):  # No trailing above initial balance + buffer
+                    target_reached = True
+                if target_reached:
+                    account_blow = account_size + buffer
+
+            if account_cash <= account_blow:
+                days_to_first_payout_values.append(-1)
+                days_to_first_payout_dates.append(df.iloc[i]["Exit time"])
+                break
+
+            if target_reached and account_cash >= account_size + target + buffer:
+                go_payout, _ = can_payout(
+                    trades_since_last_payout,
+                    trades_since_last_payout,
+                    consistency,
+                    trading_days_min,
+                    trading_day_min_profit,
+                    trading_days_profit,
+                )
+                if go_payout:
+                    days_to_first_payout_values.append(
+                        (df.iloc[j]["Exit time"] - df.iloc[i]["Exit time"]).days
+                    )
+                    days_to_first_payout_dates.append(df.iloc[i]["Exit time"])
+                    break
+
+    def get_days_to_payout_fig(dates, values):
+        fig = go.Figure()
+
+        colors = ["green" if v >= 0 else "red" for v in values]
+
+        fig.add_trace(
+            go.Bar(
+                x=dates,
+                y=values,
+                name="Days to first payout",
+                marker=dict(color=colors),
+            )
+        )
+
+        fig.update_layout(
+            title="Days to first payout",
+            xaxis_title="Date",
+            yaxis_title="Days",
+            height=750,
+        )
+
+        return fig
+
+    def get_days_to_payout_hist_fig(values):
+        filtered_values = [x for x in values if x > -1]
+
+        fig = go.Figure()
+
+        fig.add_trace(
+            go.Histogram(
+                x=filtered_values,
+                nbinsx=100,
+                name="Days to first payout",
+                marker=dict(color="orange"),
+            )
+        )
+
+        fig.update_layout(
+            title="Days to first payout distribution",
+            xaxis_title="Days",
+            yaxis_title="Frequency",
+            height=750,
+        )
+
+        return fig
+
+    time_fig = get_days_to_payout_fig(
+        days_to_first_payout_dates, days_to_first_payout_values
+    )
+    hist_fig = get_days_to_payout_hist_fig(days_to_first_payout_values)
+
+    return time_fig, hist_fig
+
+
 def run_simulation(df, template):
     target = template["target"]
     account_cost = template["account_cost"]
@@ -152,7 +309,7 @@ def run_simulation(df, template):
                 x=df["Exit time"],
                 y=np.cumsum(df["Profit"]),
                 mode="lines",
-                name="Brokerage account return",
+                name="Raw portfolio return",
             )
         )
 
@@ -164,38 +321,6 @@ def run_simulation(df, template):
         )
 
         return fig
-
-    def can_payout(trades, alltrades):
-        try:
-            if len(trades) < trading_days_min:
-                return (
-                    False,
-                    f"Not enough trading days ({len(trades)} vs {trading_days_min})",
-                )
-            if (
-                len([x for x in trades if x >= trading_day_min_profit])
-                < trading_days_profit
-            ):
-                return (
-                    False,
-                    f"Not enough positive days ({len([x for x in trades if x > trading_day_min_profit])} vs {trading_days_profit})",
-                )
-            total_profit = sum(alltrades)
-            # total_profit = sum([x for x in trades if x > trading_day_min_profit])
-            max_profit = max(alltrades)
-            if total_profit == 0:
-                return False, ""
-            if max_profit / total_profit >= consistency:
-                if total_profit != 0:
-                    return (
-                        False,
-                        f"Consistency not reached ({max_profit / total_profit:.2f} vs {consistency}: max={max_profit}, total={total_profit})",
-                    )
-                else:
-                    return (False, f"Consistency not reached")
-        except:
-            return False, ""
-        return True, ""
 
     def get_max_consecutive_payouts(l):
         max_len = 0
@@ -239,7 +364,14 @@ def run_simulation(df, template):
             target_reached = False
 
         if target_reached and account_cash >= account_size + target + buffer:
-            go_payout, _ = can_payout(trades_since_last_payout, trades_since_inception)
+            go_payout, _ = can_payout(
+                trades_since_last_payout,
+                trades_since_inception,
+                consistency,
+                trading_days_min,
+                trading_day_min_profit,
+                trading_days_profit,
+            )
             if go_payout:
                 payout = min(maximum_payout, account_cash - (account_size + buffer))
                 if payout >= minimum_payout:
@@ -344,4 +476,10 @@ def process(dataset, template):
 
     account_fig, compared_fig, events_log, summary = run_simulation(df, template)
 
-    return strategies_fig, account_fig, compared_fig, events_log, summary
+    return df, strategies_fig, account_fig, compared_fig, events_log, summary
+
+
+def process_more(df, template):
+    days_to_payout_fig = run_simulations(df, template)
+
+    return days_to_payout_fig
