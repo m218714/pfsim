@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 
 
 def load_trades(strategyfile, weight):
@@ -144,26 +145,48 @@ def run_simulations(df, template):
                     days_to_first_payout_dates.append(df.iloc[i]["Exit time"])
                     break
 
-    def get_days_to_payout_fig(dates, values):
-        fig = go.Figure()
+    def get_days_to_payout_fig(df, dates, values):
+        # Create subplots with 2 rows, shared x-axis
+        fig = make_subplots(
+            rows=2,
+            cols=1,
+            shared_xaxes=True,
+            vertical_spacing=0.1,
+            subplot_titles=("Portfolio drawdown", "Days to first payout"),
+        )
 
         colors = ["green" if v >= 0 else "red" for v in values]
-
         fig.add_trace(
             go.Bar(
                 x=dates,
                 y=values,
                 name="Days to first payout",
                 marker=dict(color=colors),
-            )
+            ),
+            row=2,
+            col=1,
         )
 
-        fig.update_layout(
-            title="Days to first payout",
-            xaxis_title="Date",
-            yaxis_title="Days",
-            height=750,
+        fig.add_trace(
+            go.Scatter(
+                x=df["Exit time"],
+                y=df["Drawdown"],
+                mode="lines",
+                name="Drawdown",
+                line=dict(color="red"),
+                fill="tozeroy",
+                fillcolor="rgba(255, 0, 0, 0.3)",
+            ),
+            row=1,
+            col=1,
         )
+
+        # Update layout
+        fig.update_xaxes(title_text="Date", row=2, col=1)
+        fig.update_yaxes(title_text="Drawdown", row=1, col=1)
+        fig.update_yaxes(title_text="Days", row=2, col=1)
+
+        fig.update_layout(height=900, showlegend=True)
 
         return fig
 
@@ -191,7 +214,7 @@ def run_simulations(df, template):
         return fig
 
     time_fig = get_days_to_payout_fig(
-        days_to_first_payout_dates, days_to_first_payout_values
+        df, days_to_first_payout_dates, days_to_first_payout_values
     )
     hist_fig = get_days_to_payout_hist_fig(days_to_first_payout_values)
 
